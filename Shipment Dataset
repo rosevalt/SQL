@@ -1,0 +1,234 @@
+select main.*, lst.lead_time_min, lead_time_max from
+    (SELECT DISTINCT
+    	date_parse(so.created_at,'%Y-%m-%d %H:%i:%s') as order_date,
+        (si.invoice_id) AS invoice_id,
+        invoice_status,
+        customer_pin_code,
+        so.order_no,
+        sov.order_no_vendor,
+        so.reference_order_no,
+        so.status AS order_status,
+        si.sales_order_id,
+        si.company_code,
+        si.subtotal,
+        si.discount_amount,
+        si.shipping_amount,
+        si.shipping_discount_amount,
+        si.handling_fee_adjust,
+        si.grand_total,
+        si.qty_ordered,
+        invoice_no,
+        si.gift_cards_amount,
+        sap_so_number,
+        pickup_voucher,
+        si.delivery_method,
+        si.store_code,
+        si.pickup_code,
+        receipt_id,
+        real_price,
+        pin_pos,
+        total_koli,
+        si.status_fulfillment,
+        status_packed,
+        ttpu_no,
+        ss.track_number as awb,
+        si.sla_age as durasi,
+        (SELECT 
+                max(sc.carrier_name)
+            FROM
+                ruparupadb_2.shipping_carrier sc
+            WHERE
+                sc.carrier_id = ss.carrier_id) AS carrier,
+        si.sla_age,
+        COALESCE((SELECT 
+                        max(date_parse(last_update,'%Y-%m-%d %H:%i:%s'))
+                    FROM
+                        ruparupadb_2.sla_age_by_date
+                    WHERE
+                        invoice_no = si.invoice_no
+                    ),
+                date_parse(si.created_at,'%Y-%m-%d %H:%i:%s')) AS sla_last_update,
+        COALESCE((SELECT 
+                        max(value)
+                    FROM
+                        ruparupadb_2.sales_log
+                    WHERE
+                        invoice_id = si.invoice_id
+                            AND affected_field = 'print_invoice_date'
+                    ),
+                '') AS print_invoice_date,
+        (SELECT ARRAY_JOIN(ARRAY_AGG( distinct sc2."comment"), ', ') FROM ruparupadb_2.sales_comment sc2 WHERE sc2.sales_order_id = si.sales_order_id) as comment,
+        date_parse(si.created_at,'%Y-%m-%d %H:%i:%s') as invoice_date,
+        date_parse(si.created_at,'%Y-%m-%d %H:%i:%s') as new_order_time,
+        date_parse(si.updated_at,'%Y-%m-%d %H:%i:%s') as invoice_update,
+        ss.shipment_status as shipment_status,
+        (select min(supplier_company) from ruparupadb_2.sales_order_item_flat soif left join ruparupadb_2.sales_invoice_item sii2 on soif.sales_order_item_id = sii2.sales_order_item_id where sii2.invoice_id = si.invoice_id) AS supplier_company,
+        (select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_processing where (si.invoice_id = sl_processing.invoice_id) and (sl_processing.affected_field = 'shipment_status') and (sl_processing.value = 'processing'))as processing_time,
+        (select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_stand_by where (si.invoice_id = sl_stand_by.invoice_id) and (sl_stand_by.affected_field = 'shipment_status') and (sl_stand_by.value = 'stand_by'))as standby_time,
+        (select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_ready_to_pickup where (si.invoice_id = sl_ready_to_pickup.invoice_id) and (sl_ready_to_pickup.affected_field = 'shipment_status') and (sl_ready_to_pickup.value = 'ready_to_pickup')) AS ready_to_pickup_time,
+        coalesce((select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_picked where (si.invoice_id = sl_picked.invoice_id) and (sl_picked.affected_field = 'shipment_status') and (sl_picked.value = 'picked')), (select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_picked where (si.invoice_id = sl_picked.invoice_id) and (sl_picked.affected_field = 'sales_shipment.shipment_status') and (sl_picked.value = 'picked'))) as picked_time,
+        coalesce((select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_shipped where (si.invoice_id = sl_shipped.invoice_id) and (sl_shipped.affected_field = 'shipment_status') and (sl_shipped.value = 'shipped')), (select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_shipped where (si.invoice_id = sl_shipped.invoice_id) and (sl_shipped.affected_field = 'sales_shipment.shipment_status') and (sl_shipped.value = 'shipped'))) as shipped_time,
+        coalesce((select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_received where (si.invoice_id = sl_received.invoice_id) and (sl_received.affected_field = 'shipment_status') and (sl_received.value = 'received')),(select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_received where (si.invoice_id = sl_received.invoice_id) and (sl_received.affected_field = 'sales_shipment.shipment_status') and (sl_received.value = 'received')))as received_time,
+        (select max(mc.city_name) from ((ruparupadb_2.master_city mc join ruparupadb_2.sales_order_address soa on ((soa.city_id = mc.city_id))) join ruparupadb_2.sales_shipment ss on ((ss.shipping_address_id = soa.sales_order_address_id))) where ((ss.invoice_id = si.invoice_id) and (soa.address_type = 'shipping'))) AS city_customer,
+        (select max(mc2.city_name) from ((ruparupadb_2.master_city mc2 join ruparupadb_2.pickup_point pp on ((pp.city_id = mc2.city_id))) join ruparupadb_2.store s on ((s.pickup_id = pp.pickup_id))) where (s.store_code = si.store_code)) AS city_store,
+        (select max(sc.carrier_name) from ruparupadb_2.sales_shipment ss2 left join ruparupadb_2.shipping_carrier sc on sc.carrier_id = ss2.carrier_id where si.invoice_id = ss2.invoice_id) as "3PL",
+        (select max(st2.name) from ruparupadb_2.store st2 where ((st2.store_code = si.store_code))) AS store_name,
+        (select max(soif.sales_source) from ruparupadb_2.sales_order_item_flat soif left join ruparupadb_2.sales_order_item soi2 on soif.sales_order_item_id = soi2.sales_order_item_id where soi2.sales_order_id = so.sales_order_id ) AS channel,
+        (CASE 
+            when (select max(soif2.brand_store_name) from ruparupadb_2.sales_order_item_flat soif2 left join ruparupadb_2.sales_order_item soi2 on soif2.sales_order_item_id = soi2.sales_order_item_id where (soi2.sales_order_id = so.sales_order_id)) is not null and (select max(soif2.brand_store_name) from ruparupadb_2.sales_order_item_flat soif2 left join ruparupadb_2.sales_order_item soi2 on soif2.sales_order_item_id = soi2.sales_order_item_id where (soi2.sales_order_id = so.sales_order_id)) != '' then (select max(soif2.brand_store_name) from ruparupadb_2.sales_order_item_flat soif2 left join ruparupadb_2.sales_order_item soi2 on soif2.sales_order_item_id = soi2.sales_order_item_id where (soi2.sales_order_id = so.sales_order_id))
+            else 'RR' 
+        end) brand_store_name,
+        (select max(date_parse(sl2.log_time,'%Y-%m-%d %H:%i:%s')) AS incomplete_date from (ruparupadb_2.sales_invoice si2 join ruparupadb_2.sales_log sl2 on ((si2.invoice_id = sl2.invoice_id))) where (sl2.value = 'incomplete') and si2.invoice_no = si.invoice_no) as incomplete_date,
+        (select date_parse(max(sov.ship_at),'%Y-%m-%d %H:%i:%s') from ruparupadb_2.sales_order_vendor sov where sov.order_no = so.order_no) as limit_auto_cancel_shoped,
+        (select msv.shop_name from ruparupadb_2.master_store_vendor msv where msv.shop_id = sov.shop_id) as shop_name,
+        (select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl where (si.invoice_id = sl.invoice_id) and (sl.affected_field = 'sales_shipment.track_number') and (sl.value = ss.track_number) and (lower(sl.actions) like '%create awb%' )) as create_awb_time,
+        (select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl where (si.invoice_id = sl.invoice_id) and (sl.affected_field = 'invoice.status_fulfillment') ) as update_fulfillment_time,
+        (case when si.receipt_id = '' or si.receipt_id is null then 'DC'
+              when REGEXP_EXTRACT(si.receipt_id, '(?<=\.).*?(?=\.)') = '78' then 'VPOS'
+              when REGEXP_EXTRACT(si.receipt_id, '(?<=\.).*?(?=\.)') != '78' then 'POS CASHIER'
+              else 'NOT DEFINED' end) as jenis_transaksi,
+        (select max(date_parse(log_time,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sales_log sl_ready_to_pickup where (si.invoice_id = sl_ready_to_pickup.invoice_id) and (sl_ready_to_pickup.affected_field = 'sales_shipment.shipment_status') and (sl_ready_to_pickup.value = 'ready_to_pickup')) AS ready_to_pickup_time_DC,
+        (SELECT DISTINCT
+            CASE
+                WHEN FLOOR((((LENGTH(sst.status) - LENGTH(REPLACE(sst.status, 'Allocated', ''))) / LENGTH('Allocated')) - 1)) > 0
+                    THEN FLOOR((((LENGTH(sst.status) - LENGTH(REPLACE(sst.status, 'Allocated', ''))) / LENGTH('Allocated')) - 1))
+                ELSE null
+            END
+        FROM
+            ruparupadb_2.sales_shipment ss
+        LEFT JOIN ruparupadb_2.sales_shipment_tracking sst ON
+            (sst.shipment_id = ss.shipment_id)
+        WHERE
+            (ss.invoice_id = si.invoice_id)
+            AND (sst.status NOT LIKE '%Ruparupa%')
+        ) AS driver_reallocated,
+        (select max(mp.province_name) from ((ruparupadb_2.master_province mp join ruparupadb_2.sales_order_address soa on ((soa.province_id = mp.province_id))) join ruparupadb_2.sales_shipment ss on ((ss.shipping_address_id = soa.sales_order_address_id))) where ((ss.invoice_id = si.invoice_id) and (soa.address_type = 'shipping'))) AS province_customer,
+        (select max(mp.province_name) from ((ruparupadb_2.master_province mp join ruparupadb_2.pickup_point pp on ((pp.province_code = mp.province_code))) join ruparupadb_2.store s2 on ((s2.pickup_id = pp.pickup_id))) where (s2.store_code = si.store_code)) AS province_store,
+        (select if (max(siitk.tarik_toko_status) is null, 'No', 'Yes') from ruparupadb_2.sales_invoice_item_tarik_toko siitk where siitk.invoice_id = si.invoice_id) is_tarik_toko,
+        (select if (max(sibd.is_booking_dc)='yes', 'Yes', 'No') from ruparupadb_2.sales_invoice_booking_dc sibd where sibd.invoice_id = si.invoice_id) is_booking_dc,
+        (SELECT
+    	    ARRAY_JOIN(ARRAY_SORT(ARRAY_AGG(DISTINCT crh.status)), ', ')
+        FROM
+            ruparupadb_2.sales_return_refund_item srri
+        LEFT JOIN ruparupadb_2.sales_return_refund srr ON
+            (srr.refund_no = srri.refund_no)
+        LEFT JOIN ruparupadb_2.customer_refund_histories crh ON
+            (crh.refund_no = srr.refund_no)
+            AND (crh.customer_id <> 0)
+        WHERE
+            (srr.invoice_no = si.invoice_no)) AS rdr_status,
+        (SELECT
+            CAST(MAX(crhd.created_at) AS TIMESTAMP)
+        FROM
+            ruparupadb_2.sales_return_refund_item srri
+        LEFT JOIN ruparupadb_2.sales_return_refund srr ON
+            (srr.refund_no = srri.refund_no)
+        LEFT JOIN ruparupadb_2.customer_refund_histories crh ON
+            (crh.refund_no = srr.refund_no)
+            AND (crh.customer_id <> 0)
+        LEFT JOIN ruparupadb_2.customer_refund_history_detail crhd ON
+            (crhd.history_id = crh.history_id)
+            AND (crhd.status = 'refunded')
+        WHERE
+            (srr.invoice_no = si.invoice_no)) AS rdr_refund_date,
+        (select ARRAY_JOIN(array_agg(DISTINCT(sio.od_odi)),'; ') from ruparupadb_2.sales_invoice_od sio where sio.invoice_id = si.invoice_id ) as od_no,
+        (select max(date_parse(time_start,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'so_sap' ) as sla_so_sap_start,
+        (select max(date_parse(time_end,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'so_sap' ) as sla_so_sap_end,
+        (select max(sla_in_minute) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'so_sap' ) as sla_so_sap_in_minute,
+        (select max(date_parse(time_start,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'od_sap' ) as sla_od_sap_start,
+        (select max(date_parse(time_end,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'od_sap' ) as sla_od_sap_end,
+        (select max(sla_in_minute) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'od_sap' ) as sla_od_sap_in_minute,
+        (select (CASE when max(time_start) >= '1970-01-01 00:00:00' then max(date_parse(time_start,'%Y-%m-%d %H:%i:%s')) else null end)  from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'od_wms' ) as sla_od_wms_start,
+        (select max(date_parse(time_end,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'od_wms' ) as sla_od_wms_end,
+        (select max(sla_in_minute) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'od_oms' ) as sla_od_wms_in_minute,
+        (select max(date_parse(time_start,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'order' ) as sla_order_start,
+        (select max(date_parse(time_end,'%Y-%m-%d %H:%i:%s')) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'order' ) as sla_order_end,
+        (select max(sla_in_minute) from ruparupadb_2.sla_age_dc sad where sad.invoice_id = si.invoice_id and sad.sla_type = 'order' ) as sla_order_in_minute,
+        (select max(mk.kecamatan_name) from ((ruparupadb_2.master_kecamatan mk join ruparupadb_2.sales_order_address soa on ((soa.kecamatan_id = mk.kecamatan_id))) join ruparupadb_2.sales_shipment ss on ((ss.shipping_address_id = soa.sales_order_address_id))) where ((ss.invoice_id = si.invoice_id) and (soa.address_type = 'shipping'))) AS kecamatan_customer,
+        (select max(mk.kecamatan_name) from ((ruparupadb_2.master_kecamatan mk join ruparupadb_2.pickup_point pp on ((pp.kecamatan_code = mk.kecamatan_code))) join ruparupadb_2.store s2 on ((s2.pickup_id = pp.pickup_id))) where (s2.store_code = si.store_code)) AS kecamatan_store,
+        ss.carrier_id as carrier_id,
+        (select cast(pp.kecamatan_code as int) from ruparupadb_2.pickup_point pp join ruparupadb_2.store s2 on s2.pickup_id = pp.pickup_id where (s2.store_code = si.store_code)) 
+        AS origin_kecamatan_id,
+        (select max(cast(soa.kecamatan_id as int)) from ruparupadb_2.sales_order_address soa join ruparupadb_2.sales_shipment ss on ss.shipping_address_id = soa.sales_order_address_id where ss.invoice_id = si.invoice_id and soa.address_type = 'shipping') AS destination_kecamatan_id,
+        (TRY_CAST(ss.eta AS TIMESTAMP)) AS eta,
+        (SELECT DISTINCT sop.method FROM ruparupadb_2.sales_order_payment sop WHERE sop.sales_order_id = so.sales_order_id) AS payment_method,
+        ss.total_weight AS total_weight,
+        (SELECT
+            CASE
+                WHEN COUNT(sii.invoice_item_id) > 0 THEN 'True'
+                ELSE 'False'
+            END
+        FROM
+            ruparupadb_2.sales_invoice_item sii
+        WHERE
+            (sii.invoice_id = si.invoice_id)
+            AND (sii.status_fulfillment IN ('incomplete', 'refunded'))
+        ) AS is_item_incomplete_exist,
+        CAST(so.customer_id AS VARCHAR) AS customer_id,
+        (SELECT ssad."value"
+            FROM ruparupadb_2.sales_shipment_additional_data ssad 
+            WHERE ssad.invoice_id = si.invoice_id AND ssad.shipment_id = ss.shipment_id AND ssad.identifier = 'booking_no'
+        ) AS value_booking_no, 
+        (select case when max(sl.sales_log_id) is not null then 'Yes' else 'No' end from ruparupadb_2.sales_log sl where sl.invoice_id = si.invoice_id and sl.affected_field in ('carrier_id', 'sales_shipment.carrier_id', 'shipment.carrier_id')) as pindah_carrier_flag,
+        (select case when max(sc.carrier_id) is null and max(cir.carrier_id) = 0 then 'pickup' else max(sc.carrier_name) end from ruparupadb_2.sales_order so2 left join ruparupadb_2.sales_invoice si2 on so2.sales_order_id = si2.sales_order_id left join ruparupadb_2.sales_invoice_item sii2 on sii2.invoice_id = si2.invoice_id left join mongodb_batch.cart_item_refactoring cir on cir.cart_id = so2.cart_id and sii2.sku = cir.sku left join ruparupadb_2.shipping_carrier sc on sc.carrier_id = cir.carrier_id where si2.invoice_no = si.invoice_no) as first_carrier_attempted,
+        (select sstsmf.manifest_keterangan from quicksight_dataset_db.sales_shipment_tracking_status_manifest_flat sstsmf join (select sstsmf2.shipment_id, max(sstsmf2.shipment_tracking_status_manifest_flat_id) as latest_row from quicksight_dataset_db.sales_shipment_tracking_status_manifest_flat sstsmf2 group by sstsmf2.shipment_id) sstsmf_child on sstsmf_child.shipment_id = sstsmf.shipment_id and sstsmf_child.latest_row = sstsmf.shipment_tracking_status_manifest_flat_id  where sstsmf.shipment_id = cast(ss.shipment_id as varchar) and sstsmf.manifest_source != 'shipper') as manifest_keterangan,
+        (SELECT soa.full_address
+            FROM ruparupadb_2.sales_order_address soa LEFT JOIN ruparupadb_2.sales_shipment ss ON ss.shipping_address_id = soa.sales_order_address_id
+            WHERE ss.invoice_id = si.invoice_id AND soa.address_type = 'shipping'
+        ) AS customer_shipping_address,
+        (SELECT soa.geolocation
+            FROM ruparupadb_2.sales_order_address soa LEFT JOIN ruparupadb_2.sales_shipment ss ON ss.shipping_address_id = soa.sales_order_address_id
+            WHERE ss.invoice_id = si.invoice_id AND soa.address_type = 'shipping'
+        ) AS customer_shipping_geolocation,
+        (SELECT CASE WHEN MAX(sl.sales_log_id) is not null THEN 'Yes' ELSE 'No' END 
+            FROM ruparupadb_2.sales_log sl 
+            WHERE sl.invoice_id = si.invoice_id AND sl.affected_field = 'delivery_method' AND LOWER(sl.actions) LIKE '%to pickup%' AND LOWER(si.delivery_method) = 'pickup'
+        ) as flag_pindah_pickup,
+        (select concat(c.first_name,' ', c.last_name) from ruparupadb_2.customer c where c.customer_id = so.customer_id) as customer_name,
+        (select c.email from ruparupadb_2.customer c where c.customer_id = so.customer_id) as customer_email,
+        (SELECT COUNT(DISTINCT sii.sku) FROM ruparupadb_2.sales_invoice_item sii WHERE sii.invoice_id = si.invoice_id GROUP BY sii.invoice_id) AS unique_count_sku,
+        (SELECT ssv.order_id FROM ruparupadb_2.sales_shipment_vendor ssv WHERE ssv.shipment_id = ss.shipment_id) AS order_id_shipper,
+        ss.insurance_fee,
+        sii_value.total_sales AS item_value,
+        (SELECT CASE WHEN MAX(sl.sales_log_id) is not null THEN 'Yes' ELSE 'No' END 
+            FROM ruparupadb_2.sales_log sl 
+            WHERE sl.invoice_id = si.invoice_id AND sl.affected_field = 'invoice_status' AND sl.value = 'received' AND sl.admin_user_id = 2
+        ) AS flag_customer_klik_received,
+        (select sstsmf.manifest_keterangan from quicksight_dataset_db.sales_shipment_tracking_status_manifest_flat sstsmf join (select sstsmf2.shipment_id, max(sstsmf2.shipment_tracking_status_manifest_flat_id) as latest_row from quicksight_dataset_db.sales_shipment_tracking_status_manifest_flat sstsmf2 group by sstsmf2.shipment_id) sstsmf_child on sstsmf_child.shipment_id = sstsmf.shipment_id and sstsmf_child.latest_row = sstsmf.shipment_tracking_status_manifest_flat_id  where sstsmf.shipment_id = cast(ss.shipment_id as varchar) and sstsmf.manifest_source = 'shipper') as manifest_keterangan_aktual,
+        (SELECT CASE WHEN sstsmf.manifest_tracking_code IN ('None','nan') THEN NULL ELSE sstsmf.manifest_tracking_code END
+            FROM quicksight_dataset_db.sales_shipment_tracking_status_manifest_flat sstsmf join (select sstsmf2.shipment_id, max(sstsmf2.shipment_tracking_status_manifest_flat_id) as latest_row from quicksight_dataset_db.sales_shipment_tracking_status_manifest_flat sstsmf2 group by sstsmf2.shipment_id) sstsmf_temp on sstsmf_temp.shipment_id = sstsmf.shipment_id and sstsmf_temp.latest_row = sstsmf.shipment_tracking_status_manifest_flat_id
+            WHERE sstsmf.shipment_id = cast(ss.shipment_id as varchar) AND sstsmf.manifest_source = 'shipper'
+        ) AS shipper_status_code,
+        (select c.phone from ruparupadb_2.customer c where c.customer_id = so.customer_id) as customer_phone
+    FROM
+        ruparupadb_2.sales_invoice si
+            LEFT JOIN
+        ruparupadb_2.sales_order so ON so.sales_order_id = si.sales_order_id
+    		left join 
+    	ruparupadb_2.sales_order_vendor sov on (sov.order_no= so.order_no)
+            LEFT JOIN
+        ruparupadb_2.sales_shipment ss ON ss.invoice_id = si.invoice_id
+        left join ruparupadb_2.store st on
+    	    st.store_code = si.store_code
+    	left join ruparupadb_2.supplier sp on
+    	    sp.supplier_id = st.supplier_id
+    	    left join ruparupadb_2.master_brand_store mbs on 
+    	mbs.brand_store_id = st.brand_store_id
+        LEFT JOIN (
+    	    SELECT 
+            sii2.invoice_id AS invoice_id, 
+            SUM(ROUND(CASE
+                WHEN (select max(mc2.city_id) from ruparupadb_2.store s2 join ruparupadb_2.pickup_point pp2 on pp2.pickup_id = s2.pickup_id join ruparupadb_2.master_city mc2 on mc2.city_id = pp2.city_id where s2.store_code = sii2.store_code) IN (386,539)
+                  THEN ((sii2.selling_price + COALESCE(sii2.handling_fee_adjust, 0) - COALESCE(sii2.discount_amount, 0)) * sii2.qty_ordered)
+                WHEN (so2.created_at < '2022-04-01 00:00:00')
+                    THEN (CAST((CAST(((sii2.selling_price + COALESCE(sii2.handling_fee_adjust, 0) - COALESCE(sii2.discount_amount, 0)) * sii2.qty_ordered) AS DECIMAL(15, 4)) * CAST(100.0/110.0 AS DECIMAL(5,4))) AS DECIMAL(15,4)))
+                ELSE (CAST((CAST(((sii2.selling_price + COALESCE(sii2.handling_fee_adjust, 0) - COALESCE(sii2.discount_amount, 0)) * sii2.qty_ordered) AS DECIMAL(15, 4)) * CAST(100.0/111.0 AS DECIMAL(5,4))) AS DECIMAL(15,4)))
+            END)) AS total_sales
+            FROM ruparupadb_2.sales_invoice_item sii2 left join ruparupadb_2.sales_invoice si2 on sii2.invoice_id = si2.invoice_id
+                LEFT JOIN ruparupadb_2.sales_order so2 ON so2.sales_order_id = si2.sales_order_id
+            GROUP BY sii2.invoice_id
+    	) sii_value ON sii_value.invoice_id = si.invoice_id
+    WHERE
+    	si.delivery_method IN ('pickup' , 'store_fulfillment', 'ownfleet', 'delivery')
+        and si.created_at > '2023-01-01 00:00:00') as main
+left join (select origin_kecamatan_id, destination_kecamatan_id, carrier_id, max(lead_time_min) as lead_time_min, max(lead_time_max) as lead_time_max from ruparupadb_shipping.shipping_lead_time slt group by origin_kecamatan_id, destination_kecamatan_id, carrier_id) as lst on main.origin_kecamatan_id = lst.origin_kecamatan_id and main.destination_kecamatan_id = lst.destination_kecamatan_id and main.carrier_id = lst.carrier_id
