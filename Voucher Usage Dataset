@@ -1,0 +1,189 @@
+select DISTINCT 
+    date_parse(so.created_at,'%Y-%m-%d %H:%i:%s') as created_at,
+    so.order_no,
+    so.sales_order_id,
+    (select ARRAY_JOIN(array_agg(DISTINCT(sro2.voucher_code)),',') from ruparupadb_2.salesrule_order sro2 where sro2.rule_id = sro.rule_id and sro2.sales_order_id = so.sales_order_id and length(sro2.voucher_code)>0 ) as voucher_code,
+    (select ARRAY_JOIN(array_agg(DISTINCT(sro2.rule_id)),',') from ruparupadb_2.salesrule_order sro2 where sro2.rule_id = sro.rule_id and sro2.sales_order_id = so.sales_order_id) as rule_id,
+    (select lower(name) from ruparupadb_2.salesrule sr where sr.rule_id = sro.rule_id) as voucher_name,
+    -- sum(voucher_amount_used) as voucher_amount,
+    (select sum(voucher_amount_used) from ruparupadb_2.salesrule_order sro2 where so.sales_order_id=sro2.sales_order_id and sro2.rule_id=sro.rule_id) as voucher_amount,
+    (select sum(shipping_discount_amount) from ruparupadb_2.sales_invoice si where si.sales_order_id = so.sales_order_id group by sales_order_id) as voucher_shipping_amount,
+    -- sum(sro.stamp_acquired) as stamp_acquired,
+    (select sum(stamp_acquired) from ruparupadb_2.salesrule_order sro2 where so.sales_order_id=sro2.sales_order_id and sro2.rule_id=sro.rule_id) as stamp_acquired,
+    (so.grand_total-so.shipping_amount+so.shipping_discount_amount+so.gift_cards_amount) as sales,
+    (SELECT ARRAY_JOIN(array_agg(DISTINCT(soif.sales_source)),',') FROM ruparupadb_2.sales_order_item soi left join ruparupadb_2.sales_order_item_flat soif on soif.sales_order_item_id = soi.sales_order_item_id WHERE soi.sales_order_id = so.sales_order_id) AS channels,
+    (select distinct customer_id from ruparupadb_2.customer c2 where c2.customer_id = so.customer_id) as customer_id,
+    (select distinct email from ruparupadb_2.customer c2 where c2.customer_id = so.customer_id) as customer_email,
+    'Diskon' as voucher_type,
+    (select date_parse(c.created_at,'%Y-%m-%d %H:%i:%s') from ruparupadb_2.customer c where c.customer_id=so.customer_id) AS customer_created_at,
+    (select date_parse(min(so2.created_at),'%Y-%m-%d %H:%i:%s') from ruparupadb_2.sales_order so2 join ruparupadb_2.sales_invoice si2 on si2.sales_order_id = so2.sales_order_id  where (so2.customer_id = so.customer_id) and so2.status not in ('canceled', 'batal')) AS first_date_order,
+    (select ARRAY_JOIN(array_agg(DISTINCT(sro2.rule_id)),',') from ruparupadb_2.sales_order so2 left join ruparupadb_2.salesrule_order sro2 on sro2.sales_order_id = so2.sales_order_id where so.customer_id = so2.customer_id) as history_rule_id,
+    (select cpr.point_redeemed from ruparupadb_2.customer_point_redeem cpr join ruparupadb_2.salesrule_voucher sv on cpr.sales_rule_voucher_id=sv.voucher_id where sro.voucher_code=sv.voucher_code) as point_redeemed,
+    (select cpr.company_code from ruparupadb_2.customer_point_redeem cpr join ruparupadb_2.salesrule_voucher sv on cpr.sales_rule_voucher_id=sv.voucher_id where sro.voucher_code=sv.voucher_code) as company_code_redeem,
+    (select c2g.member_number from ruparupadb_2.customer_2_group c2g where ((c2g.customer_id = so.customer_id) and (c2g.group_id = 4))) AS member_ahi,
+    (select c2g.member_number from ruparupadb_2.customer_2_group c2g where ((c2g.customer_id = so.customer_id) and (c2g.group_id = 5))) AS member_hci,
+    (SELECT status FROM ruparupadb_2.customer c where c.customer_id = so.customer_id) as customer_status,
+    (CASE
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%ace%' THEN 'AHI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%ataru%' THEN 'Ataru'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%gsp%' THEN 'GSP'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%hci%' THEN 'HCI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%informa%' THEN 'HCI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%kls%' THEN 'KLS'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%krisbow%' THEN 'Krisbow'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%lego%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%pet kingdom%' THEN 'GSP'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%selma%' THEN 'Selma'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%tgi%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%toys kingdom%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) THEN ''
+        ELSE sr.budget_owner
+    END) AS budget_owner,
+    ROUND((CASE
+        WHEN (select max(mc.city_id) from ruparupadb_2.store st join ruparupadb_2.pickup_point pp on st.pickup_id = pp.pickup_id join ruparupadb_2.master_city mc on mc.city_id = pp.city_id where st.store_code = soi.store_code) in (386, 539)
+            THEN CAST((so.grand_total-so.shipping_amount+so.shipping_discount_amount+so.gift_cards_amount) AS DECIMAL(15, 4))
+        WHEN CAST(so.created_at AS TIMESTAMP) < CAST('2022-04-01 00:00:00' AS TIMESTAMP)
+            THEN CAST((CAST((so.grand_total-so.shipping_amount+so.shipping_discount_amount+so.gift_cards_amount) AS DECIMAL(15, 4)) * CAST(100.0/110.0 AS DECIMAL(5, 4))) AS DECIMAL(15, 4))
+        ELSE
+            CAST((CAST((so.grand_total-so.shipping_amount+so.shipping_discount_amount+so.gift_cards_amount) AS DECIMAL(15, 4)) * CAST(100.0/111.0 AS DECIMAL(5, 4))) AS DECIMAL(15, 4))
+    END)) AS sales_exclude_ppn,
+    -- (SELECT ARRAY_JOIN(array_sort(ARRAY_AGG(distinct mbs.brand_store_name)), ', ') FROM ruparupadb_2.sales_invoice si LEFT JOIN ruparupadb_2.store st ON (st.store_code = si.store_code) LEFT JOIN ruparupadb_2.master_brand_store mbs ON (mbs.brand_store_id = st.brand_store_id) WHERE (si.sales_order_id = so.sales_order_id)) AS brand_store_name,
+    (SELECT ARRAY_JOIN(array_sort(ARRAY_AGG(distinct (CASE WHEN (soif.brand_store_name is not null and soif.brand_store_name != '') THEN soif.brand_store_name else 'RR' end))), ', ')
+        FROM ruparupadb_2.sales_invoice si 
+            LEFT JOIN ruparupadb_2.sales_invoice_item sii ON sii.invoice_id = si.invoice_id
+            LEFT JOIN ruparupadb_2.sales_order_item_flat soif ON soif.sales_order_item_id = sii.sales_order_item_id
+        WHERE si.sales_order_id = so.sales_order_id
+    ) AS brand_store_name,
+    sr.budget_owner AS original_budget_owner,
+    (SELECT ARRAY_JOIN(array_agg(DISTINCT(si.store_code)),', ')
+        FROM ruparupadb_2.sales_invoice si WHERE si.sales_order_id = so.sales_order_id
+    ) AS store_code,
+    (SELECT ARRAY_JOIN(ARRAY_AGG(DISTINCT scg.customer_group_id ORDER BY scg.customer_group_id), ', ')
+        FROM ruparupadb_2.salesrule_order sro2 LEFT JOIN ruparupadb_2.salesrule_customer_group scg ON sro2.rule_id = scg.rule_id
+        WHERE sro2.sales_order_id = so.sales_order_id AND scg.rule_id = sro.rule_id  
+    ) AS customer_group_id,
+    CAST(sr."to_date" AS TIMESTAMP) AS "to_date"
+from  
+    ruparupadb_2.salesrule_order sro
+    join ruparupadb_2.sales_order so on sro.sales_order_id = so.sales_order_id
+    join ruparupadb_2.sales_order_item soi on soi.sales_order_id = so.sales_order_id
+    JOIN ruparupadb_2.salesrule sr ON sro.rule_id = sr.rule_id
+where   
+    sro.rule_id in (select rule_id from ruparupadb_2.salesrule where lower(name) not like '%pool%' AND rule_id NOT IN (8024))
+    and sro.rule_id in (select rule_id from ruparupadb_2.salesrule where rule_type in ('voucher','invoice_created','shopping_cart'))
+    and so.created_at > '2022-01-01 00:00:00' AND so.sales_order_id IN (SELECT sales_order_id FROM ruparupadb_2.sales_invoice)
+    and (sro.voucher_code = (select max(sro2.voucher_code) from ruparupadb_2.salesrule_order sro2 where sro2.sales_order_id = sro.sales_order_id and sro2.rule_id = sro.rule_id) or sro.voucher_code is null)
+    AND so.sales_order_id IN (SELECT sales_order_id FROM ruparupadb_2.sales_invoice si where si.invoice_status != 'full_refund')
+group by order_no,sro.rule_id,
+    (CASE
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%ace%' THEN 'AHI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%ataru%' THEN 'Ataru'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%gsp%' THEN 'GSP'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%hci%' THEN 'HCI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%informa%' THEN 'HCI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%kls%' THEN 'KLS'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%krisbow%' THEN 'Krisbow'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%lego%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%pet kingdom%' THEN 'GSP'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%selma%' THEN 'Selma'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%tgi%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%toys kingdom%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) THEN ''
+        ELSE sr.budget_owner
+    END), sr.budget_owner,
+    so.sales_order_id,soi.store_code,so.created_at,sro.voucher_code,so.grand_total,so.shipping_amount,so.shipping_discount_amount,so.gift_cards_amount,so.customer_id,so.store_code, sr."to_date"
+UNION
+select DISTINCT 
+    date_parse(so.created_at,'%Y-%m-%d %H:%i:%s') as created_at,
+    so.order_no,
+    so.sales_order_id,
+    (select ARRAY_JOIN(array_agg(DISTINCT(sro2.voucher_code)),',') from ruparupadb_2.salesrule_order sro2 where sro2.rule_id = sro.rule_id and sro2.sales_order_id = so.sales_order_id and length(sro2.voucher_code)>0 ) as voucher_code,
+    (select ARRAY_JOIN(array_agg(DISTINCT(sro2.rule_id)),',') from ruparupadb_2.salesrule_order sro2 where sro2.rule_id = sro.rule_id and sro2.sales_order_id = so.sales_order_id) as rule_id,
+    (select lower(name) from ruparupadb_2.salesrule sr where sr.rule_id = sro.rule_id) as voucher_name,
+    -- sum(voucher_amount_used) as voucher_amount,
+    (select sum(voucher_amount_used) from ruparupadb_2.salesrule_order sro2 where so.sales_order_id=sro2.sales_order_id and sro2.rule_id=sro.rule_id) as voucher_amount,
+    (select sum(shipping_discount_amount) from ruparupadb_2.sales_invoice si where si.sales_order_id = so.sales_order_id group by sales_order_id) as voucher_shipping_amount,
+    -- sum(sro.stamp_acquired) as stamp_acquired,
+    (select sum(stamp_acquired) from ruparupadb_2.salesrule_order sro2 where so.sales_order_id=sro2.sales_order_id and sro2.rule_id=sro.rule_id) as stamp_acquired,
+    (so.grand_total-so.shipping_amount+so.shipping_discount_amount+so.gift_cards_amount) as sales,
+    (SELECT ARRAY_JOIN(array_agg(DISTINCT(soif.sales_source)),',') FROM ruparupadb_2.sales_order_item soi left join ruparupadb_2.sales_order_item_flat soif on soif.sales_order_item_id = soi.sales_order_item_id WHERE soi.sales_order_id = so.sales_order_id) AS channels,
+    (select distinct customer_id from ruparupadb_2.customer c2 where c2.customer_id = so.customer_id) as customer_id,
+    (select distinct email from ruparupadb_2.customer c2 where c2.customer_id = so.customer_id) as customer_email,
+    'Cashback' as voucher_type,
+    (select date_parse(c.created_at,'%Y-%m-%d %H:%i:%s') from ruparupadb_2.customer c where c.customer_id=so.customer_id) AS customer_created_at,
+    (select date_parse(min(so2.created_at),'%Y-%m-%d %H:%i:%s') from ruparupadb_2.sales_order so2 join ruparupadb_2.sales_invoice si2 on si2.sales_order_id = so2.sales_order_id  where (so2.customer_id = so.customer_id) and so2.status not in ('canceled', 'batal')) AS first_date_order,
+    (select ARRAY_JOIN(array_agg(DISTINCT(sro2.rule_id)),',') from ruparupadb_2.sales_order so2 left join ruparupadb_2.salesrule_order sro2 on sro2.sales_order_id = so2.sales_order_id where so.customer_id = so2.customer_id) as history_rule_id,
+    (select cpr.point_redeemed from ruparupadb_2.customer_point_redeem cpr join ruparupadb_2.salesrule_voucher sv on cpr.sales_rule_voucher_id=sv.voucher_id where sro.voucher_code=sv.voucher_code) as point_redeemed,
+    (select cpr.company_code from ruparupadb_2.customer_point_redeem cpr join ruparupadb_2.salesrule_voucher sv on cpr.sales_rule_voucher_id=sv.voucher_id where sro.voucher_code=sv.voucher_code) as company_code_redeem,
+    (select c2g.member_number from ruparupadb_2.customer_2_group c2g where ((c2g.customer_id = so.customer_id) and (c2g.group_id = 4))) AS member_ahi,
+    (select c2g.member_number from ruparupadb_2.customer_2_group c2g where ((c2g.customer_id = so.customer_id) and (c2g.group_id = 5))) AS member_hci,
+    (SELECT status FROM ruparupadb_2.customer c where c.customer_id = so.customer_id) as customer_status,
+    (CASE
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%ace%' THEN 'AHI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%ataru%' THEN 'Ataru'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%gsp%' THEN 'GSP'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%hci%' THEN 'HCI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%informa%' THEN 'HCI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%kls%' THEN 'KLS'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%krisbow%' THEN 'Krisbow'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%lego%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%pet kingdom%' THEN 'GSP'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%selma%' THEN 'Selma'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%tgi%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%toys kingdom%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) THEN ''
+        ELSE sr.budget_owner
+    END) AS budget_owner,
+    ROUND((CASE
+        WHEN (select max(mc.city_id) from ruparupadb_2.store st join ruparupadb_2.pickup_point pp on st.pickup_id = pp.pickup_id join ruparupadb_2.master_city mc on mc.city_id = pp.city_id where st.store_code = soi.store_code) in (386, 539)
+            THEN CAST((so.grand_total-so.shipping_amount+so.shipping_discount_amount+so.gift_cards_amount) AS DECIMAL(15, 4))
+        WHEN CAST(so.created_at AS TIMESTAMP) < CAST('2022-04-01 00:00:00' AS TIMESTAMP)
+            THEN CAST((CAST((so.grand_total-so.shipping_amount+so.shipping_discount_amount+so.gift_cards_amount) AS DECIMAL(15, 4)) * CAST(100.0/110.0 AS DECIMAL(5, 4))) AS DECIMAL(15, 4))
+        ELSE
+            CAST((CAST((so.grand_total-so.shipping_amount+so.shipping_discount_amount+so.gift_cards_amount) AS DECIMAL(15, 4)) * CAST(100.0/111.0 AS DECIMAL(5, 4))) AS DECIMAL(15, 4))
+    END)) AS sales_exclude_ppn,
+    -- (SELECT ARRAY_JOIN(array_sort(ARRAY_AGG(distinct mbs.brand_store_name)), ', ') FROM ruparupadb_2.sales_invoice si LEFT JOIN ruparupadb_2.store st ON (st.store_code = si.store_code) LEFT JOIN ruparupadb_2.master_brand_store mbs ON (mbs.brand_store_id = st.brand_store_id) WHERE (si.sales_order_id = so.sales_order_id)) AS brand_store_name,
+    (SELECT ARRAY_JOIN(array_sort(ARRAY_AGG(distinct (CASE WHEN (soif.brand_store_name is not null and soif.brand_store_name != '') THEN soif.brand_store_name else 'RR' end))), ', ')
+        FROM ruparupadb_2.sales_invoice si 
+            LEFT JOIN ruparupadb_2.sales_invoice_item sii ON sii.invoice_id = si.invoice_id
+            LEFT JOIN ruparupadb_2.sales_order_item_flat soif ON soif.sales_order_item_id = sii.sales_order_item_id
+        WHERE si.sales_order_id = so.sales_order_id
+    ) AS brand_store_name,
+    sr.budget_owner AS original_budget_owner,
+    (SELECT ARRAY_JOIN(array_agg(DISTINCT(si.store_code)),', ')
+        FROM ruparupadb_2.sales_invoice si WHERE si.sales_order_id = so.sales_order_id
+    ) AS store_code,
+    (SELECT ARRAY_JOIN(ARRAY_AGG(DISTINCT scg.customer_group_id ORDER BY scg.customer_group_id), ', ')
+        FROM ruparupadb_2.salesrule_order sro2 LEFT JOIN ruparupadb_2.salesrule_customer_group scg ON sro2.rule_id = scg.rule_id
+        WHERE sro2.sales_order_id = so.sales_order_id AND scg.rule_id = sro.rule_id  
+    ) AS customer_group_id,
+    CAST(sr."to_date" AS TIMESTAMP) AS "to_date"
+from    
+    ruparupadb_2.salesrule_order sro
+    join ruparupadb_2.sales_order so on sro.sales_order_id = so.sales_order_id
+    join ruparupadb_2.sales_order_item soi on soi.sales_order_id = so.sales_order_id
+    JOIN ruparupadb_2.salesrule sr ON sro.rule_id = sr.rule_id
+where   
+    sro.rule_id in (select rule_id from ruparupadb_2.salesrule where lower(name) like '%pool%' AND rule_id NOT IN (8024))
+    and sro.rule_id in (select rule_id from ruparupadb_2.salesrule where rule_type in ('voucher','invoice_created','shopping_cart'))
+    and (sro.voucher_code = (select max(sro2.voucher_code) from ruparupadb_2.salesrule_order sro2 where sro2.sales_order_id = sro.sales_order_id and sro2.rule_id = sro.rule_id) or sro.voucher_code is null)
+    and so.created_at > '2022-01-01 00:00:00' AND so.sales_order_id IN (SELECT sales_order_id FROM ruparupadb_2.sales_invoice)
+    AND so.sales_order_id IN (SELECT sales_order_id FROM ruparupadb_2.sales_invoice si where si.invoice_status != 'full_refund')
+group by order_no,sro.rule_id,
+    (CASE
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%ace%' THEN 'AHI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%ataru%' THEN 'Ataru'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%gsp%' THEN 'GSP'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%hci%' THEN 'HCI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%informa%' THEN 'HCI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%kls%' THEN 'KLS'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%krisbow%' THEN 'Krisbow'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%lego%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%pet kingdom%' THEN 'GSP'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%selma%' THEN 'Selma'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%tgi%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) AND (LOWER(SUBSTR(sr.name, 1, POSITION('-' IN sr.name)))) LIKE '%toys kingdom%' THEN 'TGI'
+        WHEN (sr.budget_owner = '' OR sr.budget_owner = NULL OR sr.budget_owner IS NULL) THEN ''
+        ELSE sr.budget_owner
+    END), sr.budget_owner,
+    so.sales_order_id,soi.store_code,so.created_at,sro.voucher_code,so.grand_total,so.shipping_amount,so.shipping_discount_amount,so.gift_cards_amount,so.customer_id,so.store_code, sr."to_date"
